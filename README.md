@@ -76,3 +76,7 @@ defaults delete com.apple.dock autohide-delay; defaults delete com.apple.dock no
 | `SettingsView.swift`, `DockSettings.swift` | réglages |
 | `SystemDockService.swift` | masquage et restauration du Dock d'Apple |
 | `Sources/BuzzWebApp/main.swift` | coquille WebKit des apps web générées |
+
+## Licence
+
+MIT, © 2026 Agence Buzzle : libre d'utilisation, de modification et de partage, en gardant la mention de copyright. Voir [LICENSE](LICENSE).
