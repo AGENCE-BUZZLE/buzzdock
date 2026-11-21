@@ -256,7 +256,7 @@ struct Loupe<Content: View>: View {
 }
 
 /// Tuile avec son nom au survol. `zooms` : soumise à la loupe (le verre, le contenu et les arrondis
-/// grandissent ensemble) ; sinon elle reste fixe (dossiers, Téléchargements : choix de Clément, 17/11/2026).
+/// grandissent ensemble) ; sinon elle reste fixe (dossiers, Téléchargements).
 struct ZoomingTile<Content: View>: View {
     @EnvironmentObject private var settings: DockSettings
     let label: String

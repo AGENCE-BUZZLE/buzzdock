@@ -137,7 +137,7 @@ enum Browsers {
         known.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
     }
 
-    /// Safari par défaut (choix de Clément du 16/11/2026)
+    /// Safari par défaut
     static var preferred: String? { "com.apple.Safari" }
 
     /// Libellé de l'option « comme une app » selon le navigateur
@@ -533,7 +533,7 @@ final class WebIconCache: ObservableObject {
         "facebook.com": "com.facebook.Facebook",
         "threads.net": "com.burbn.barcelona",
         "threads.com": "com.burbn.barcelona",
-        // WhatsApp : logo WhatsApp Business (choix de Clément, 17/11/2026)
+        // WhatsApp : logo WhatsApp Business
         "whatsapp.com": "net.whatsapp.WhatsAppSMB",
         "web.whatsapp.com": "net.whatsapp.WhatsAppSMB",
         "messenger.com": "com.facebook.Messenger",
