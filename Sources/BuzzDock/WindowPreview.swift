@@ -80,7 +80,7 @@ final class WindowPreviewController {
         if let visible = screen?.frame {
             x = min(max(x, visible.minX + 8), visible.maxX - size.width - 8)
         }
-        let frame = NSRect(x: x, y: anchor.y + 46, width: size.width, height: size.height)
+        let frame = NSRect(x: x, y: DockPopup.barTop + 10, width: size.width, height: size.height)
 
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
@@ -172,10 +172,17 @@ struct WindowPreviewStrip: View {
                 Spacer()
                 Button("Nouvelle fenêtre", action: onNewWindow).buttonStyle(.link).font(.system(size: 12))
             }
-            HStack(alignment: .top, spacing: 12) {
+            let row = HStack(alignment: .top, spacing: 12) {
                 ForEach(items) { item in
                     PreviewCard(item: item, onPick: onPick)
                 }
+            }
+            if items.count > 4 {
+                // trop de fenêtres pour l'écran : rangée défilante
+                ScrollView(.horizontal, showsIndicators: false) { row }
+                    .frame(width: min(CGFloat(items.count) * 212, (NSScreen.main?.visibleFrame.width ?? 1400) - 120))
+            } else {
+                row
             }
             if !canCapture {
                 Button("Afficher les aperçus des fenêtres (autoriser l'enregistrement de l'écran)", action: onAllowCapture)
@@ -186,7 +193,6 @@ struct WindowPreviewStrip: View {
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.15)))
-        .environment(\.colorScheme, .dark)
         .fixedSize()
     }
 }
@@ -206,7 +212,7 @@ struct PreviewCard: View {
                         .resizable()
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .padding(4)
                 } else {
                     Image(systemName: item.isMinimized ? "rectangle.bottomhalf.inset.filled" : "macwindow")

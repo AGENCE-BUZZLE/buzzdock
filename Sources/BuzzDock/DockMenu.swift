@@ -72,6 +72,34 @@ enum WindowService {
         }
     }
 
+    /// Résultats mis en cache par app (lire les menus par l'Accessibilité coûte quelques millisecondes)
+    private static var menuItemCache: [String: Bool] = [:]
+
+    static func hasMenuItem(of app: NSRunningApplication, startingWith titles: [String]) -> Bool {
+        let key = (app.bundleIdentifier ?? "\(app.processIdentifier)") + titles.joined()
+        if let cached = menuItemCache[key] { return cached }
+        let found = findMenuItem(of: app, startingWith: titles) != nil
+        menuItemCache[key] = found
+        return found
+    }
+
+    private static func findMenuItem(of app: NSRunningApplication, startingWith titles: [String]) -> AXUIElement? {
+        guard isTrusted else { return nil }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        guard let menuBar = attribute(element, kAXMenuBarAttribute),
+              CFGetTypeID(menuBar) == AXUIElementGetTypeID() else { return nil }
+        let bar = menuBar as! AXUIElement
+        for barItem in (attribute(bar, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+            for menu in (attribute(barItem, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+                for item in (attribute(menu, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
+                    let title = (attribute(item, kAXTitleAttribute) as? String) ?? ""
+                    if titles.contains(where: { title.hasPrefix($0) }) { return item }
+                }
+            }
+        }
+        return nil
+    }
+
     static func pressMenuItem(of app: NSRunningApplication, startingWith titles: [String]) -> Bool {
         guard isTrusted else { return false }
         let element = AXUIElementCreateApplication(app.processIdentifier)
@@ -268,7 +296,8 @@ enum DockMenu {
     static func show(for entry: DockEntry, store: DockStore) {
         let menu = build(for: entry, store: store)
         store.isInteracting = true
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        // au-dessus de l'icône, comme le menu du Dock d'Apple
+        menu.popUp(positioning: nil, at: NSPoint(x: NSEvent.mouseLocation.x - 20, y: DockPopup.barTop + 6), in: nil)
         store.isInteracting = false
     }
 
@@ -289,16 +318,16 @@ enum DockMenu {
                 }
                 if !windows.isEmpty { menu.addItem(.separator()) }
             } else {
-                menu.addItem(ClosureMenuItem("Afficher les fenêtres ouvertes… (autoriser l'accès)") {
+                menu.addItem(ClosureMenuItem("Autoriser l'accès aux fenêtres…") {
                     WindowService.requestTrust()
                 })
                 menu.addItem(.separator())
             }
-            menu.addItem(ClosureMenuItem("Nouvelle fenêtre") { WindowService.newWindow(for: app) })
-            menu.addItem(.separator())
-        } else {
-            menu.addItem(ClosureMenuItem("Ouvrir") { store.open(entry) })
-            menu.addItem(.separator())
+            // seulement si l'app a vraiment « Nouvelle fenêtre » dans ses menus (pas de ⌘N à l'aveugle)
+            if WindowService.hasMenuItem(of: app, startingWith: ["Nouvelle fenêtre", "New Window"]) {
+                menu.addItem(ClosureMenuItem("Nouvelle fenêtre") { WindowService.newWindow(for: app) })
+                menu.addItem(.separator())
+            }
         }
 
         // Options
@@ -329,6 +358,12 @@ enum DockMenu {
         let optionsItem = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
         optionsItem.submenu = options
         menu.addItem(optionsItem)
+
+        // app fermée : Options puis Ouvrir, comme le Dock d'Apple
+        if app == nil {
+            menu.addItem(.separator())
+            menu.addItem(ClosureMenuItem("Ouvrir") { store.open(entry) })
+        }
 
         if let app {
             menu.addItem(.separator())

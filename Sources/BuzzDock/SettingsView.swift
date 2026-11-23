@@ -71,13 +71,13 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                     Text(item.kind.title)
                     Spacer()
-                    Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
+                    Button { move(index, by: -1) } label: { Image(systemName: "chevron.up").accessibilityLabel("Monter") }
                         .buttonStyle(.borderless)
                         .disabled(index == 0)
-                    Button { move(index, by: 1) } label: { Image(systemName: "chevron.down") }
+                    Button { move(index, by: 1) } label: { Image(systemName: "chevron.down").accessibilityLabel("Descendre") }
                         .buttonStyle(.borderless)
                         .disabled(index == settings.widgets.count - 1)
-                    Toggle("", isOn: Binding(
+                    Toggle(item.kind.title, isOn: Binding(
                         get: { settings.widgets[index].enabled },
                         set: { settings.widgets[index].enabled = $0 }
                     ))

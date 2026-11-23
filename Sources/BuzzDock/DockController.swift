@@ -190,7 +190,8 @@ final class DockController {
         guard target != panel.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.3
+                // « Réduire les animations » : pas de glissement
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.3
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().setFrame(target, display: true)
             }

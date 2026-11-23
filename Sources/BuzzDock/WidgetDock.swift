@@ -48,7 +48,7 @@ struct WidgetDockView: View {
         .padding(.horizontal, widgetSideMargin)
         .padding(.bottom, 4)
         .fixedSize()
-        .environment(\.colorScheme, .dark)
+        .modifier(DockScheme())
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .coordinateSpace(name: "dockRoot")
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: settings.enabledWidgets)
@@ -156,13 +156,45 @@ struct Tile<Content: View>: View {
     }
 }
 
+/// Mode Teinté : fond sombre choisi, on force le thème sombre. Liquid Glass : on suit le système
+/// (le verre prend la couleur du fond d'écran, le texte doit pouvoir passer en noir).
+struct DockScheme: ViewModifier {
+    @EnvironmentObject private var settings: DockSettings
+
+    func body(content: Content) -> some View {
+        if settings.material == .tinted {
+            content.environment(\.colorScheme, .dark)
+        } else {
+            content
+        }
+    }
+}
+
 /// Fond d'une tuile : bulle de Liquid Glass (macOS 26) ou aplat sombre.
 struct TileSurface: ViewModifier {
     @EnvironmentObject private var settings: DockSettings
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        surface(content, shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(contrast == .increased ? 0.5 : 0), lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func surface(_ content: Content, _ shape: RoundedRectangle) -> some View {
+        if reduceTransparency {
+            // « Réduire la transparence » : fond opaque du système
+            content.background(shape.fill(Color(nsColor: .windowBackgroundColor)))
+        } else {
+            material(content, shape)
+        }
+    }
+
+    @ViewBuilder
+    private func material(_ content: Content, _ shape: RoundedRectangle) -> some View {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             if settings.material == .glass {
@@ -292,6 +324,30 @@ struct BadgeAnchorsKey: PreferenceKey {
     }
 }
 
+/// Retour d'appui immédiat (mouse-down) sans bloquer le clic, le glisser ni l'appui long.
+struct PressFeedback: ViewModifier {
+    @Binding var pressed: Bool
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !pressed { pressed = true } }
+                .onEnded { _ in pressed = false }
+        )
+    }
+}
+
+extension View {
+    func pressFeedback(_ pressed: Binding<Bool>) -> some View { modifier(PressFeedback(pressed: pressed)) }
+
+    /// L'élément s'enfonce et s'assombrit tant qu'on appuie
+    func pressedLook(_ pressed: Bool, reduceMotion: Bool) -> some View {
+        self.scaleEffect(pressed && !reduceMotion ? 0.94 : 1, anchor: .bottom)
+            .brightness(pressed ? -0.2 : 0)
+            .animation(.spring(response: 0.18, dampingFraction: 1), value: pressed)
+    }
+}
+
 /// Pastille rouge de notification, comme sur iPhone
 struct BadgeBubble: View {
     let text: String
@@ -305,7 +361,7 @@ struct BadgeBubble: View {
             .lineLimit(1)
             .padding(.horizontal, size * 0.09)
             .frame(minWidth: size * 0.36, minHeight: size * 0.36)
-            .background(Capsule().fill(Color(red: 1, green: 0.23, blue: 0.19)))
+            .background(Capsule().fill(Color(nsColor: .systemRed)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.3), radius: 1.5, y: 1)
             .fixedSize()
@@ -342,7 +398,7 @@ struct WidgetMenu: ViewModifier {
             Button("Personnaliser le Dock…") {
                 NotificationCenter.default.post(name: .buzzOpenSettings, object: nil)
             }
-            Button("Quitter BuzzDock (le Dock de macOS revient)") { NSApp.terminate(nil) }
+            Button("Quitter BuzzDock") { NSApp.terminate(nil) }
         }
     }
 }
@@ -376,6 +432,10 @@ struct ClockWidget: View {
         }
         .onTapGesture { openApp(bundleID: "com.apple.clock") }
         .hoverLabel("Horloge")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Horloge")
+        .accessibilityValue(Date().formatted(date: .omitted, time: .shortened))
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -391,7 +451,7 @@ struct FlipCard: View {
                 Text(text)
                     .font(.system(size: 36 * k, weight: .heavy, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentTransition(.numericText())
                 Rectangle()
@@ -400,8 +460,8 @@ struct FlipCard: View {
                     .frame(maxHeight: .infinity)
                 if let badge {
                     Text(badge)
-                        .font(.system(size: 8 * k, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .font(.system(size: max(10, 8 * k), weight: .bold))
+                        .foregroundStyle(.secondary)
                         .padding(5 * k)
                 }
             }
@@ -423,11 +483,11 @@ struct NowPlayingWidget: View {
                 VStack(alignment: .leading, spacing: 1 * k) {
                     Text(player.track?.title ?? "Rien en lecture")
                         .font(.system(size: 14 * k, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(player.track?.artist ?? "Spotify ou Musique")
                         .font(.system(size: 13 * k, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -439,8 +499,8 @@ struct NowPlayingWidget: View {
                                 Spacer()
                                 Text(Self.format(player.track?.duration ?? 0))
                             }
-                            .font(.system(size: 9.5 * k, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .font(.system(size: max(10, 9.5 * k), weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.secondary)
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(Color.white.opacity(0.18))
@@ -471,7 +531,12 @@ struct NowPlayingWidget: View {
             Button("Masquer « Morceau en cours »") { settings.setWidget(.nowPlaying, enabled: false) }
             Button("Personnaliser le Dock…") { NotificationCenter.default.post(name: .buzzOpenSettings, object: nil) }
         }
-        .hoverLabel(player.track.map { "\($0.player) · clic pour lecture ou pause" } ?? "")
+        .hoverLabel(player.track?.player ?? "Morceau en cours")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Morceau en cours")
+        .accessibilityValue(player.track.map { "\($0.title), \($0.artist)" } ?? "rien en lecture")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Lecture ou pause") { player.playPause() }
     }
 
     static func format(_ seconds: Double) -> String {
@@ -484,9 +549,10 @@ struct VinylDisc: View {
     let artwork: NSImage?
     let isPlaying: Bool
     let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isPlaying)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isPlaying || reduceMotion)) { context in
             let angle = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 9) * 40
             ZStack {
                 Circle().fill(Color(white: 0.9))
@@ -531,12 +597,12 @@ struct GaugeTile: View {
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 1 * k) {
                     Image(systemName: symbol)
-                        .font(.system(size: 10 * k, weight: .semibold))
+                        .font(.system(size: max(10, 10 * k), weight: .semibold))
                         .foregroundStyle(color)
                     Text("\(Int((value * 100).rounded()))%")
                         .font(.system(size: 13.5 * k, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
             }
             .padding(7 * k)
@@ -549,9 +615,13 @@ struct CPUWidget: View {
     @ObservedObject private var stats = SystemStats.shared
 
     var body: some View {
-        GaugeTile(value: stats.cpu, color: Color(red: 0.2, green: 0.78, blue: 0.95), symbol: "cpu")
+        GaugeTile(value: stats.cpu, color: Color(nsColor: .systemCyan), symbol: "cpu")
             .onTapGesture { openApp(bundleID: "com.apple.ActivityMonitor") }
             .hoverLabel("Processeur")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Processeur")
+            .accessibilityValue("\(Int((stats.cpu * 100).rounded())) %")
+            .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -562,8 +632,10 @@ struct BatteryWidget: View {
         if let battery = stats.battery {
             GaugeTile(
                 value: battery,
-                color: battery < 0.2 ? .red : Color(red: 1.0, green: 0.62, blue: 0.1),
-                symbol: stats.charging ? "bolt.fill" : "battery.75percent"
+                color: battery < 0.2 ? Color(nsColor: .systemRed) : Color(nsColor: .systemOrange),
+                symbol: stats.charging ? "battery.100percent.bolt"
+                    : battery < 0.13 ? "battery.0percent" : battery < 0.38 ? "battery.25percent"
+                    : battery < 0.63 ? "battery.50percent" : battery < 0.88 ? "battery.75percent" : "battery.100percent"
             )
             .onTapGesture {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.Battery-Settings.extension") {
@@ -571,6 +643,10 @@ struct BatteryWidget: View {
                 }
             }
             .hoverLabel(stats.charging ? "Batterie · en charge" : "Batterie")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Batterie")
+            .accessibilityValue("\(Int((battery * 100).rounded())) %" + (stats.charging ? ", en charge" : ""))
+            .accessibilityAddTraits(.isButton)
         }
     }
 }
@@ -585,17 +661,20 @@ struct NetworkWidget: View {
             VStack(alignment: .leading, spacing: 4 * k) {
                 Image(systemName: "globe")
                     .font(.system(size: 13 * k, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.25, green: 0.8, blue: 0.85))
+                    .foregroundStyle(Color(nsColor: .systemTeal))
                     .frame(maxWidth: .infinity)
                 Label(SystemStats.formatSpeed(stats.downBytesPerSecond), systemImage: "arrow.down")
                 Label(SystemStats.formatSpeed(stats.upBytesPerSecond), systemImage: "arrow.up")
             }
             .labelStyle(CompactLabelStyle(spacing: 3 * k))
-            .font(.system(size: 10.5 * k, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.9))
+            .font(.system(size: max(10, 10.5 * k), weight: .semibold).monospacedDigit())
+            .foregroundStyle(.primary)
         }
         .onTapGesture { openApp(bundleID: "com.apple.ActivityMonitor") }
         .hoverLabel("Réseau")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Réseau")
+        .accessibilityValue("réception \(SystemStats.formatSpeed(stats.downBytesPerSecond)), envoi \(SystemStats.formatSpeed(stats.upBytesPerSecond))")
     }
 }
 
@@ -603,7 +682,7 @@ struct CompactLabelStyle: LabelStyle {
     let spacing: CGFloat
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: spacing) {
-            configuration.icon.foregroundStyle(Color(red: 0.25, green: 0.8, blue: 0.85))
+            configuration.icon.foregroundStyle(Color(nsColor: .systemTeal))
             configuration.title
         }
     }
@@ -636,10 +715,10 @@ struct MonthWidget: View {
                     HStack {
                         Text(context.date.formatted(.dateTime.month(.abbreviated).locale(Locale(identifier: "fr_FR"))))
                         Spacer()
-                        Text("\(days - day) j restants")
+                        Text(days - day == 1 ? "1 jour restant" : "\(days - day) j restants")
                     }
-                    .font(.system(size: 9.5 * k, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .font(.system(size: max(10, 9.5 * k), weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 12 * k)
                 .padding(.vertical, 7 * k)
@@ -647,6 +726,10 @@ struct MonthWidget: View {
         }
         .onTapGesture { openApp(bundleID: "com.apple.iCal") }
         .hoverLabel("Calendrier")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Jours du mois")
+        .accessibilityValue(Date().formatted(date: .complete, time: .omitted))
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -656,6 +739,8 @@ struct FolderTile: View {
     @EnvironmentObject private var settings: DockSettings
     @EnvironmentObject private var store: DockStore
     let folder: AppFolder
+    @State private var pressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Le dossier ouvert, dans la fenêtre placée au-dessus du Dock
     private func openFolder() {
@@ -702,7 +787,14 @@ struct FolderTile: View {
             store.badge(for: folder).map { [BadgeAnchor(id: folder.id.uuidString, text: $0, bounds: bounds)] } ?? []
         }
         .animation(.spring(response: 0.25), value: isTargeted)
+        .pressedLook(pressed, reduceMotion: reduceMotion)
         .onTapGesture { openFolder() }
+        .pressFeedback($pressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Dossier \(folder.name)")
+        .accessibilityValue("\(folder.paths.count + folder.links.count) éléments"
+            + (store.badge(for: folder).map { ", \($0) notifications" } ?? ""))
+        .accessibilityAddTraits(.isButton)
         .onDrop(of: [UTType.fileURL, UTType.url], isTargeted: $isTargeted) { providers in
             if store.dropDragged(into: folder.id) { return true }
             loadURLs(providers) { urls in
@@ -720,11 +812,27 @@ struct FolderTile: View {
         .contextMenu {
             Button("Ouvrir « \(folder.name) »") { openFolder() }
             Button("Nouveau dossier") { store.createFolder() }
-            Button("Supprimer le dossier") { store.deleteFolder(folder.id) }
             Divider()
             Button("Personnaliser le Dock…") { NotificationCenter.default.post(name: .buzzOpenSettings, object: nil) }
-            Button("Quitter BuzzDock (le Dock de macOS revient)") { NSApp.terminate(nil) }
+            Button("Quitter BuzzDock") { NSApp.terminate(nil) }
+            Divider()
+            Button("Supprimer le dossier…", role: .destructive) { confirmDelete() }
         }
+    }
+
+    private func confirmDelete() {
+        guard !(folder.paths.isEmpty && folder.links.isEmpty) else {
+            store.deleteFolder(folder.id)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Supprimer le dossier « \(folder.name) » ?"
+        alert.informativeText = "Les apps ne sont pas supprimées, seulement le dossier."
+        alert.addButton(withTitle: "Supprimer")
+        alert.addButton(withTitle: "Annuler")
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { store.deleteFolder(folder.id) }
     }
 }
 
@@ -737,7 +845,7 @@ struct NewFolderTile: View {
         Tile(width: 64) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 20 * k, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.secondary)
         }
         .onTapGesture { store.createFolder() }
         .hoverLabel("Nouveau dossier")
@@ -1043,8 +1151,9 @@ struct BarLinkIcon: View {
         let size = WidgetLayout.iconWidth * k
         VStack(spacing: 3 * k) {
             WebLinkIcon(link: link, size: size * scale)
-                .scaleEffect(pressed ? 0.86 : 1, anchor: .bottom)
+                .scaleEffect(pressed ? 0.92 : 1, anchor: .bottom)
                 .brightness(pressed ? -0.25 : 0)
+                .animation(.spring(response: 0.18, dampingFraction: 1), value: pressed)
             Capsule().fill(Color.clear).frame(width: 5 * k, height: 3 * k)
         }
         .frame(height: 64 * k, alignment: .bottom)
@@ -1054,13 +1163,11 @@ struct BarLinkIcon: View {
                 DockLabel(text: link.name).offset(y: -30 - size * (scale - 1))
             }
         }
-        .onTapGesture {
-            withAnimation(.easeOut(duration: 0.08)) { pressed = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.45)) { pressed = false }
-            }
-            store.openLink(link)
-        }
+        .onTapGesture { store.openLink(link) }
+        .pressFeedback($pressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(link.name)
+        .accessibilityAddTraits(.isButton)
         .onDrag {
             store.draggingID = "link:\(link.id.uuidString)"
             return NSItemProvider(object: (link.resolvedURL ?? URL(string: "https://example.com")!) as NSURL)
@@ -1140,6 +1247,7 @@ struct RunningAppIcon: View {
     @State private var isTargeted = false
     @State private var bouncing = false
     @State private var pressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let k = settings.tileSize / 64
@@ -1156,12 +1264,13 @@ struct RunningAppIcon: View {
                     }
                 }
                 .animation(.spring(response: 0.3, dampingFraction: 0.6), value: store.badges[entry.id])
-                .scaleEffect(isTargeted ? 1.1 : (pressed ? 0.86 : 1), anchor: .bottom)
+                .scaleEffect(isTargeted ? 1.1 : (pressed && !reduceMotion ? 0.92 : 1), anchor: .bottom)
                 .brightness(pressed ? -0.25 : 0)
+                .animation(.spring(response: 0.18, dampingFraction: 1), value: pressed)
                 .offset(y: bouncing ? -20 * k : 0)
                 .opacity(entry.isRunning ? 1 : 0.85)
             Capsule()
-                .fill(Color.white.opacity(entry.isRunning ? (entry.isFrontmost ? 0.9 : 0.45) : 0))
+                .fill(Color.primary.opacity(entry.isRunning ? (entry.isFrontmost ? 0.9 : 0.45) : 0))
                 .frame(width: (entry.isFrontmost ? 12 : 5) * k, height: 3 * k)
         }
         .frame(height: 64 * k, alignment: .bottom)
@@ -1180,28 +1289,28 @@ struct RunningAppIcon: View {
         .onChange(of: entry.isLaunching) { _, launching in
             launching ? startBounce() : stopBounce()
         }
-        .onTapGesture {
-            pressAnimation()
-            store.open(entry)
-        }
+        .onTapGesture { store.open(entry) }
         .onDrag {
             store.draggingID = entry.id
             return NSItemProvider(object: entry.url as NSURL)
         }
         // Appui long : aperçus des fenêtres (le clic droit garde le menu complet, via le contrôleur)
-        .onLongPressGesture(minimumDuration: 0.45) { WindowPreviewController.shared.show(for: entry, store: store) }
-    }
-
-    /// Clic : l'icône s'enfonce et s'assombrit, puis revient avec un petit rebond (comme le Dock d'Apple)
-    private func pressAnimation() {
-        withAnimation(.easeOut(duration: 0.08)) { pressed = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.45)) { pressed = false }
-        }
+        // l'icône s'enfonce dès l'appui (mouse-down) et remonte au relâchement, comme le Dock d'Apple
+        .onLongPressGesture(minimumDuration: 0.45, perform: {
+            WindowPreviewController.shared.show(for: entry, store: store)
+        }, onPressingChanged: { pressed = $0 })
+        // VoiceOver
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(entry.name)
+        .accessibilityValue([entry.isRunning ? "ouverte" : nil, store.badges[entry.id].map { "\($0) notifications" }]
+            .compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Afficher les fenêtres") { WindowPreviewController.shared.show(for: entry, store: store) }
+        .accessibilityAction(named: "Menu") { DockMenu.show(for: entry, store: store) }
     }
     /// Nouvelle notification : deux grands rebonds, comme le Dock d'Apple
     private func attentionBounce(_ remaining: Int = 2) {
-        guard remaining > 0 else { return }
+        guard remaining > 0, !reduceMotion else { return }   // « Réduire les animations » : la pastille suffit
         withAnimation(.easeOut(duration: 0.28)) { bouncing = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
             withAnimation(.easeIn(duration: 0.28)) { bouncing = false }
@@ -1211,11 +1320,12 @@ struct RunningAppIcon: View {
 
     /// Rebond de lancement, tant que l'app démarre (comme le Dock d'Apple).
     private func startBounce() {
+        guard !reduceMotion else { return }
         withAnimation(.easeOut(duration: 0.3).repeatForever(autoreverses: true)) { bouncing = true }
     }
 
     private func stopBounce() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { bouncing = false }
+        withAnimation(.spring(response: 0.3, dampingFraction: 1)) { bouncing = false }
     }
 }
 
@@ -1242,6 +1352,8 @@ struct UtilitiesGroup: View {
 struct DownloadsIcon: View {
     @EnvironmentObject private var settings: DockSettings
     @EnvironmentObject private var store: DockStore
+    @State private var pressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isTargeted = false
 
     private var folder: URL {
@@ -1263,6 +1375,11 @@ struct DownloadsIcon: View {
         .contentShape(Rectangle())
         .hoverLabel("Téléchargements")
         .animation(.spring(response: 0.25), value: isTargeted)
+        .pressedLook(pressed, reduceMotion: reduceMotion)
+        .pressFeedback($pressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Téléchargements")
+        .accessibilityAddTraits(.isButton)
         .onTapGesture {
             store.isInteracting = true
             let store = self.store
@@ -1331,6 +1448,8 @@ final class TrashMonitor: ObservableObject {
 struct TrashIcon: View {
     @EnvironmentObject private var settings: DockSettings
     @EnvironmentObject private var store: DockStore
+    @State private var pressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var trash = TrashMonitor.shared
     @State private var isTargeted = false
 
@@ -1349,6 +1468,11 @@ struct TrashIcon: View {
         .contentShape(Rectangle())
         .hoverLabel("Corbeille")
         .animation(.spring(response: 0.25), value: isTargeted)
+        .pressedLook(pressed, reduceMotion: reduceMotion)
+        .pressFeedback($pressed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(trash.isFull ? "Corbeille, contient des éléments" : "Corbeille, vide")
+        .accessibilityAddTraits(.isButton)
         .onTapGesture {
             let url = (try? FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: nil, create: false))
                 ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
@@ -1356,10 +1480,22 @@ struct TrashIcon: View {
         }
         .contextMenu {
             Button("Ouvrir") {
-                let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+                let url = (try? FileManager.default.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: nil, create: false))
+                    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
                 NSWorkspace.shared.open(url)
             }
+            Divider()
+            Button("Personnaliser le Dock…") { NotificationCenter.default.post(name: .buzzOpenSettings, object: nil) }
             Button("Vider la Corbeille…") {
+                let alert = NSAlert()
+                alert.messageText = "Supprimer définitivement les éléments de la Corbeille ?"
+                alert.informativeText = "Cette action est irréversible."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Vider la Corbeille")
+                alert.addButton(withTitle: "Annuler")
+                alert.buttons.first?.hasDestructiveAction = true
+                NSApp.activate(ignoringOtherApps: true)
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
                 process.arguments = ["-e", "tell application \"Finder\" to empty trash"]

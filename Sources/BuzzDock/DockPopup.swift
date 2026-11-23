@@ -37,12 +37,7 @@ final class DockPopup {
         ownerID = id
         self.onClose = onClose
 
-        let root = content()
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .environment(\.colorScheme, .dark)
-            .fixedSize()
+        let root = PopupChrome { content() }.fixedSize()
         let controller = NSHostingController(rootView: root)
         controller.sizingOptions = [.preferredContentSize]   // la fenêtre suit la taille du contenu
 
@@ -69,10 +64,13 @@ final class DockPopup {
         // garder la fenêtre ancrée en bas (au-dessus du Dock) quand son contenu change de taille
         observer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) { _ in
             MainActor.assumeIsolated {
-                guard let panel = DockPopup.shared.panel, abs(panel.frame.minY - (DockPopup.barTop + 10)) > 1 else { return }
-                var frame = panel.frame
-                frame.origin.y = DockPopup.barTop + 10
-                panel.setFrame(frame, display: true)
+                guard let panel = DockPopup.shared.panel else { return }
+                if abs(panel.frame.minY - (DockPopup.barTop + 10)) > 1 {
+                    var frame = panel.frame
+                    frame.origin.y = DockPopup.barTop + 10
+                    panel.setFrame(frame, display: true)
+                }
+                panel.invalidateShadow()   // l'ombre suit la nouvelle taille
             }
         }
 
@@ -107,5 +105,44 @@ final class DockPopup {
         let callback = onClose
         onClose = nil
         callback?()
+    }
+}
+
+/// Habillage commun des fenêtres surgissantes : verre (macOS 26) ou matériau, et apparition
+/// « matérialisée » depuis le Dock (échelle + fondu, ressort sans rebond ; fondu seul si Réduire les animations).
+struct PopupChrome<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        background(content(), shape)
+            .clipShape(shape)
+            .scaleEffect(appeared || reduceMotion ? 1 : 0.92, anchor: .bottom)
+            .opacity(appeared ? 1 : 0)
+            .onAppear {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 1)) {
+                    appeared = true
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func background(_ view: Content, _ shape: RoundedRectangle) -> some View {
+        if reduceTransparency {
+            view.background(Color(nsColor: .windowBackgroundColor), in: shape)
+        } else {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                view.glassEffect(.regular, in: shape)
+            } else {
+                view.background(.regularMaterial, in: shape)
+            }
+            #else
+            view.background(.regularMaterial, in: shape)
+            #endif
+        }
     }
 }
