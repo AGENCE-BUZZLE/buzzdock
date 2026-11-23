@@ -37,7 +37,8 @@ final class DockPopup {
         ownerID = id
         self.onClose = onClose
 
-        let root = PopupChrome { content() }.fixedSize()
+        let body = content()
+        let root = PopupChrome { body }.fixedSize()
         let controller = NSHostingController(rootView: root)
         controller.sizingOptions = [.preferredContentSize]   // la fenêtre suit la taille du contenu
 
