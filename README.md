@@ -21,7 +21,7 @@ Un Dock à widgets pour macOS, en Swift / SwiftUI, qui remplace le Dock d'Apple.
 ## Compiler et installer
 
 ```bash
-git clone <adresse-de-ce-dépôt> buzzdock
+git clone --recursive https://github.com/AGENCE-BUZZLE/buzzdock.git buzzdock
 cd buzzdock
 ./scripts/build-app.sh
 cp -R build/BuzzDock.app /Applications/
@@ -80,3 +80,13 @@ defaults delete com.apple.dock autohide-delay; defaults delete com.apple.dock no
 ## Licence
 
 MIT, © 2026 Agence Buzzle : libre d'utilisation, de modification et de partage, en gardant la mention de copyright. Voir [LICENSE](LICENSE).
+
+## Développer avec Claude Code
+
+Le dépôt embarque des skills de design « à la Apple » dans `.claude/skills/` (guide HIG d'Apple, mouvement fluide d'Emil Kowalski, Swift moderne). Après le clonage :
+
+```bash
+git submodule update --init
+```
+
+Claude Code les charge tout seul dans ce dossier ; les consignes sont dans `CLAUDE.md`. Les skills d'Emil Kowalski sont sous licence MIT (`.claude/skills/LICENSE-emilkowalski`).

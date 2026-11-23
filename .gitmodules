@@ -1,0 +1,3 @@
+[submodule ".claude/skills/apple-hig"]
+	path = .claude/skills/apple-hig
+	url = https://github.com/dickwu/apple-design-skill.git
