@@ -774,8 +774,14 @@ struct WebAppGallery: View {
                 .padding(.vertical, 4)
             }
             .frame(height: 320)
-            Button("Autre site…", action: onCustom)
-                .buttonStyle(.link)
+            Button(action: onCustom) {
+                Label("Autre site…", systemImage: "plus.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            .buttonStyle(.plain)
         }
     }
 }

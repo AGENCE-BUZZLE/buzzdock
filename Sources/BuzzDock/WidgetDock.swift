@@ -865,17 +865,28 @@ struct FolderPopover: View {
 
     private var folder: AppFolder? { store.folders.first { $0.id == folderID } }
 
+    @State private var renaming = false
+    @State private var draftName = ""
+    @FocusState private var nameFocused: Bool
+
+    private enum Mode { case grid, apps, webApps, customLink }
+    private var mode: Mode {
+        if addingLink { return customLink ? .customLink : .webApps }
+        return adding ? .apps : .grid
+    }
+
     var body: some View {
         VStack(spacing: 14) {
-            TextField("Nom du dossier", text: Binding(
-                get: { folder?.name ?? "" },
-                set: { store.renameFolder(folderID, to: $0) }
-            ))
-            .textFieldStyle(.plain)
-            .font(.system(size: 20, weight: .bold))
-            .multilineTextAlignment(.center)
-
-            if addingLink && customLink {
+            header
+            switch mode {
+            case .grid: grid
+            case .apps: picker
+            case .webApps:
+                WebAppGallery(
+                    onPick: { link in store.addLink(link, to: folderID) },
+                    onCustom: { customLink = true }
+                )
+            case .customLink:
                 WebLinkForm(
                     onAdd: { link in
                         store.addLink(link, to: folderID)
@@ -884,34 +895,100 @@ struct FolderPopover: View {
                     },
                     onCancel: { customLink = false }
                 )
-            } else if addingLink {
-                WebAppGallery(
-                    onPick: { link in store.addLink(link, to: folderID) },
-                    onCustom: { customLink = true }
-                )
-                Button("Terminé") { addingLink = false }
-            } else if adding { picker } else { grid }
-
-            HStack {
-                if !addingLink {
-                    Button(adding ? "Terminé" : "Ajouter des apps…") {
-                        adding.toggle()
-                        if adding && catalog.isEmpty { catalog = AppCatalog.scan() }
-                    }
-                    if !adding {
-                        Button("Ajouter une app web…") { addingLink = true }
-                    }
-                }
-                Spacer()
-                Button("Toutes les apps") {
-                    onClose()
-                    NotificationCenter.default.post(name: .buzzOpenLauncher, object: nil)
-                }
             }
-            .buttonStyle(.link)
         }
         .padding(18)
         .frame(width: 400)
+        .animation(.spring(response: 0.3, dampingFraction: 1), value: mode)
+    }
+
+    /// En-tête façon iOS : nom du dossier au centre (clic pour renommer), bouton rond à droite.
+    private var header: some View {
+        ZStack {
+            if renaming {
+                TextField("Nom du dossier", text: $draftName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 20, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .focused($nameFocused)
+                    .onSubmit(commitRename)
+                    .onExitCommand { renaming = false }
+                    .onChange(of: nameFocused) { _, focused in if !focused { commitRename() } }
+                    .padding(.horizontal, 40)
+            } else {
+                Text(folder?.name ?? "")
+                    .font(.system(size: 20, weight: .bold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 40)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        draftName = folder?.name ?? ""
+                        renaming = true
+                        DispatchQueue.main.async { nameFocused = true }
+                    }
+                    .help("Clic pour renommer")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Renommer le dossier")
+            }
+            HStack {
+                if mode != .grid {
+                    // retour à la grille
+                    Button {
+                        if mode == .customLink { customLink = false } else { adding = false; addingLink = false }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .background(.quaternary, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Retour")
+                }
+                Spacer()
+                if mode == .grid {
+                    Menu {
+                        Button {
+                            adding = true
+                            if catalog.isEmpty { catalog = AppCatalog.scan() }
+                        } label: { Label("Ajouter des apps", systemImage: "square.grid.2x2") }
+                        Button { addingLink = true } label: { Label("Ajouter une app web", systemImage: "globe") }
+                        Divider()
+                        Button { startRename() } label: { Label("Renommer", systemImage: "pencil") }
+                        Button {
+                            onClose()
+                            NotificationCenter.default.post(name: .buzzOpenLauncher, object: nil)
+                        } label: { Label("Toutes les apps", systemImage: "square.grid.3x3") }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .background(.quaternary, in: Circle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Ajouter")
+                } else {
+                    Button("OK") { adding = false; addingLink = false; customLink = false }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
+        }
+        .frame(height: 30)
+    }
+
+    private func startRename() {
+        draftName = folder?.name ?? ""
+        renaming = true
+        DispatchQueue.main.async { nameFocused = true }
+    }
+
+    private func commitRename() {
+        guard renaming else { return }
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty { store.renameFolder(folderID, to: name) }
+        renaming = false
     }
 
     private var grid: some View {
@@ -919,7 +996,7 @@ struct FolderPopover: View {
         let links = folder?.links ?? []
         return Group {
             if apps.isEmpty && links.isEmpty {
-                Text("Dossier vide : ajoute des apps ou des sites, ou glisse-les sur le dossier.")
+                Text("Dossier vide\nAjoute des apps avec + ou glisse-les sur le dossier.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, minHeight: 90)
